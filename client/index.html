@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Collab Engine Phase 1</title>
+</head>
+<body>
+  <h2>Real-Time Shared Document</h2>
+  <textarea id="editor" rows="15" cols="80"></textarea>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    const socket = io("http://localhost:3001");
+    const editor = document.getElementById("editor");
+
+    socket.on("document:init", (text) => {
+      editor.value = text;
+    });
+
+    editor.addEventListener("input", () => {
+      socket.emit("document:update", editor.value);
+    });
+
+    socket.on("document:update", (text) => {
+      editor.value = text;
+    });
+  </script>
+</body>
+</html>
