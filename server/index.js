@@ -16,6 +16,11 @@ io.on("connection", (socket) => {
 
   // Send current document to new user
   socket.emit("document:init", documentText);
+  
+  socket.on("operation", (op) => {
+    // Broadcast operation to others
+    socket.broadcast.emit("operation", op);
+  });
 
   // Receive text updates
   socket.on("document:update", (newText) => {

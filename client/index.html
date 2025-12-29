@@ -11,18 +11,57 @@
   <script>
     const socket = io("http://localhost:3001");
     const editor = document.getElementById("editor");
-
-    socket.on("document:init", (text) => {
-      editor.value = text;
+  
+    let localText = "";
+  
+    function applyOperation(op) {
+      if (op.type === "insert") {
+        localText =
+          localText.slice(0, op.index) +
+          op.char +
+          localText.slice(op.index);
+      }
+  
+      if (op.type === "delete") {
+        localText =
+          localText.slice(0, op.index) +
+          localText.slice(op.index + 1);
+      }
+  
+      editor.value = localText;
+    }
+  
+    editor.addEventListener("keydown", (e) => {
+      const index = editor.selectionStart;
+  
+      // Insert character
+      if (e.key.length === 1) {
+        const op = {
+          type: "insert",
+          char: e.key,
+          index
+        };
+  
+        applyOperation(op);
+        socket.emit("operation", op);
+      }
+  
+      // Backspace
+      if (e.key === "Backspace" && index > 0) {
+        const op = {
+          type: "delete",
+          index: index - 1
+        };
+  
+        applyOperation(op);
+        socket.emit("operation", op);
+      }
     });
-
-    editor.addEventListener("input", () => {
-      socket.emit("document:update", editor.value);
-    });
-
-    socket.on("document:update", (text) => {
-      editor.value = text;
+  
+    socket.on("operation", (op) => {
+      applyOperation(op);
     });
   </script>
+  
 </body>
 </html>
