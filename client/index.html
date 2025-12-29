@@ -1,67 +1,150 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Collab Engine Phase 1</title>
+  <title>Realtime Editor</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
-  <h2>Real-Time Shared Document</h2>
-  <textarea id="editor" rows="15" cols="80"></textarea>
 
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script>
-    const socket = io("http://localhost:3001");
-    const editor = document.getElementById("editor");
-  
-    let localText = "";
-  
-    function applyOperation(op) {
-      if (op.type === "insert") {
-        localText =
-          localText.slice(0, op.index) +
-          op.char +
-          localText.slice(op.index);
-      }
-  
-      if (op.type === "delete") {
-        localText =
-          localText.slice(0, op.index) +
-          localText.slice(op.index + 1);
-      }
-  
-      editor.value = localText;
+<h3>Online Users</h3>
+<ul id="users"></ul>
+
+<button id="undo">Undo</button>
+<button id="redo">Redo</button>
+
+<br><br>
+
+<textarea id="editor" rows="10" cols="50"></textarea>
+
+<script>
+  const socket = io("http://localhost:3001");
+
+  const editor = document.getElementById("editor");
+  const usersList = document.getElementById("users");
+
+  const username = prompt("Enter your name");
+  const docId = "doc-1";
+
+  let version = 0;
+  let undoStack = [];
+  let redoStack = [];
+  let isRemote = false;
+
+  socket.emit("document:join", { docId, username });
+
+  /* =======================
+     INIT
+  ======================== */
+  socket.on("document:init", ({ text, version: v }) => {
+    editor.value = text;
+    version = v;
+  });
+
+  /* =======================
+     PRESENCE
+  ======================== */
+  socket.on("presence:update", (users) => {
+    usersList.innerHTML = "";
+    users.forEach(u => {
+      const li = document.createElement("li");
+      li.textContent = u;
+      usersList.appendChild(li);
+    });
+  });
+
+  /* =======================
+     LOCAL INPUT
+  ======================== */
+  editor.addEventListener("input", (e) => {
+    if (isRemote) return;
+
+    const value = e.data;
+    const index = editor.selectionStart - (value ? value.length : 0);
+
+    let op;
+    if (value) {
+      op = { type: "insert", index, value };
+    } else {
+      const deletedChar = editor.value[index] || "";
+      op = { type: "delete", index, length: 1, value: deletedChar };
     }
-  
-    editor.addEventListener("keydown", (e) => {
-      const index = editor.selectionStart;
-  
-      // Insert character
-      if (e.key.length === 1) {
-        const op = {
-          type: "insert",
-          char: e.key,
-          index
-        };
-  
-        applyOperation(op);
-        socket.emit("operation", op);
-      }
-  
-      // Backspace
-      if (e.key === "Backspace" && index > 0) {
-        const op = {
-          type: "delete",
-          index: index - 1
-        };
-  
-        applyOperation(op);
-        socket.emit("operation", op);
-      }
+
+    undoStack.push(op);
+    redoStack = [];
+
+    socket.emit("document:operation", {
+      op,
+      baseVersion: version
     });
-  
-    socket.on("operation", (op) => {
-      applyOperation(op);
+
+    version++;
+  });
+
+  /* =======================
+     REMOTE OPERATION
+  ======================== */
+  socket.on("document:operation", ({ op, version: v }) => {
+    isRemote = true;
+
+    let text = editor.value;
+
+    if (op.type === "insert") {
+      text =
+        text.slice(0, op.index) +
+        op.value +
+        text.slice(op.index);
+    }
+
+    if (op.type === "delete") {
+      text =
+        text.slice(0, op.index) +
+        text.slice(op.index + op.length);
+    }
+
+    editor.value = text;
+    version = v;
+    isRemote = false;
+  });
+
+  /* =======================
+     UNDO
+  ======================== */
+  document.getElementById("undo").onclick = () => {
+    const op = undoStack.pop();
+    if (!op) return;
+
+    const inverse =
+      op.type === "insert"
+        ? { type: "delete", index: op.index, length: op.value.length }
+        : { type: "insert", index: op.index, value: op.value };
+
+    redoStack.push(op);
+
+    socket.emit("document:operation", {
+      op: inverse,
+      baseVersion: version
     });
-  </script>
-  
+
+    version++;
+  };
+
+  /* =======================
+     REDO
+  ======================== */
+  document.getElementById("redo").onclick = () => {
+    const op = redoStack.pop();
+    if (!op) return;
+
+    undoStack.push(op);
+
+    socket.emit("document:operation", {
+      op,
+      baseVersion: version
+    });
+
+    version++;
+  };
+</script>
+
 </body>
 </html>
